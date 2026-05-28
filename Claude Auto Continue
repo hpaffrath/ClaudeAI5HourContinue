@@ -1,0 +1,171 @@
+// ==UserScript==
+// @name         Claude Auto Continue (Smart Time Input UI)
+// @namespace    http://tampermonkey.net/
+// @version      3.1
+// @match        https://claude.ai/*
+// @match        https://*.claude.ai/*
+// @grant        none
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    console.log("🔥 Scheduler loaded (custom input UI)");
+
+    // ----------------------------
+    // CREATE INPUT OVERLAY
+    // ----------------------------
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+    overlay.style.background = "rgba(0,0,0,0.6)";
+    overlay.style.zIndex = "999999";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+
+    overlay.innerHTML = `
+        <div style="
+            background: #111;
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            font-family: monospace;
+            width: 320px;
+        ">
+            <h3 style="margin-top:0;">⏰ Schedule Continue</h3>
+
+            <div style="margin-bottom:10px; font-size:12px; opacity:0.8;">
+                Enter time in 24h format
+            </div>
+
+            <div style="font-size:12px; margin-bottom:8px;">
+                Examples:
+                <br>• 03:10
+                <br>• 15:45
+                <br>• 09:05
+            </div>
+
+            <input id="timeInput" style="
+                width: 100%;
+                padding: 8px;
+                font-size: 14px;
+                border-radius: 6px;
+                border: 1px solid #444;
+                background: #000;
+                color: white;
+            " placeholder="HH:MM" />
+
+            <button id="goBtn" style="
+                margin-top: 10px;
+                width: 100%;
+                padding: 8px;
+                background: green;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+            ">Start</button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    function getNextRun(hour, minute) {
+        const now = new Date();
+        const target = new Date();
+
+        target.setHours(hour, minute, 0, 0);
+
+        if (target <= now) {
+            target.setDate(target.getDate() + 1);
+        }
+
+        return target;
+    }
+
+    function sendContinue() {
+        const editor = document.querySelector('[contenteditable="true"]');
+        if (!editor) return;
+
+        editor.focus();
+
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+        document.execCommand('insertText', false, "continue");
+
+        setTimeout(() => {
+            editor.dispatchEvent(new KeyboardEvent('keydown', {
+                bubbles: true,
+                cancelable: true,
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13
+            }));
+        }, 300);
+    }
+
+    document.getElementById("goBtn").onclick = () => {
+        const value = document.getElementById("timeInput").value.trim();
+
+        const parts = value.split(":");
+
+        if (parts.length !== 2) {
+            alert("Invalid format. Use HH:MM (e.g. 03:10)");
+            return;
+        }
+
+        const hour = parseInt(parts[0], 10);
+        const minute = parseInt(parts[1], 10);
+
+        if (isNaN(hour) || isNaN(minute)) {
+            alert("Invalid numbers");
+            return;
+        }
+
+        overlay.remove();
+
+        const target = getNextRun(hour, minute);
+        const delay = target - new Date();
+
+        console.log("⏳ scheduled for:", target.toString());
+
+        // countdown UI
+        const box = document.createElement("div");
+        box.style.position = "fixed";
+        box.style.bottom = "20px";
+        box.style.right = "20px";
+        box.style.background = "rgba(0,0,0,0.8)";
+        box.style.color = "white";
+        box.style.padding = "12px";
+        box.style.borderRadius = "10px";
+        box.style.fontFamily = "monospace";
+        box.style.zIndex = "999999";
+
+        document.body.appendChild(box);
+
+        setInterval(() => {
+            const diff = target - new Date();
+            const sec = Math.max(0, Math.floor(diff / 1000));
+
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+
+            box.innerHTML = `
+                ⏳ Running scheduler<br>
+                Target: ${target.toLocaleTimeString()}<br>
+                Remaining: ${m}m ${s}s
+            `;
+        }, 1000);
+
+        setTimeout(() => {
+            console.log("🚀 TRIGGER FIRED");
+            sendContinue();
+            box.innerHTML += "<br>✅ SENT";
+        }, delay);
+    };
+
+})();
