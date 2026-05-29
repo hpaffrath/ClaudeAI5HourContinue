@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Claude Auto Continue (Smart Time Input UI)
+// @name         Claude Auto Continue (Time + Message Scheduler)
 // @namespace    http://tampermonkey.net/
-// @version      3.1
+// @version      3.3
 // @match        https://claude.ai/*
 // @match        https://*.claude.ai/*
 // @grant        none
@@ -10,10 +10,10 @@
 (function () {
     'use strict';
 
-    console.log("🔥 Scheduler loaded (custom input UI)");
+    console.log("🔥 Scheduler loaded (time + message mode)");
 
     // ----------------------------
-    // CREATE INPUT OVERLAY
+    // CUSTOM INPUT UI
     // ----------------------------
     const overlay = document.createElement("div");
     overlay.style.position = "fixed";
@@ -34,35 +34,47 @@
             padding: 20px;
             border-radius: 12px;
             font-family: monospace;
-            width: 320px;
+            width: 340px;
         ">
-            <h3 style="margin-top:0;">⏰ Schedule Continue</h3>
+            <h3 style="margin-top:0;">⏰ Scheduler Setup</h3>
 
-            <div style="margin-bottom:10px; font-size:12px; opacity:0.8;">
-                Enter time in 24h format
+            <div style="font-size:12px; opacity:0.8; margin-bottom:8px;">
+                Time (24h format)
             </div>
 
-            <div style="font-size:12px; margin-bottom:8px;">
-                Examples:
-                <br>• 03:10
-                <br>• 15:45
-                <br>• 09:05
+            <div style="font-size:12px; margin-bottom:6px;">
+                Examples: 03:10 • 15:45 • 09:05
             </div>
 
             <input id="timeInput" style="
                 width: 100%;
                 padding: 8px;
-                font-size: 14px;
+                margin-bottom: 12px;
                 border-radius: 6px;
                 border: 1px solid #444;
-                background: #000;
+                background: black;
                 color: white;
+                box-sizing: border-box;
             " placeholder="HH:MM" />
 
-            <button id="goBtn" style="
-                margin-top: 10px;
+            <div style="font-size:12px; opacity:0.8; margin-bottom:6px;">
+                Message to send
+            </div>
+
+            <input id="msgInput" style="
                 width: 100%;
                 padding: 8px;
+                margin-bottom: 12px;
+                border-radius: 6px;
+                border: 1px solid #444;
+                background: black;
+                color: white;
+                box-sizing: border-box;
+            " value="Continue" />
+
+            <button id="goBtn" style="
+                width: 100%;
+                padding: 10px;
                 background: green;
                 color: white;
                 border: none;
@@ -80,6 +92,7 @@
 
         target.setHours(hour, minute, 0, 0);
 
+        // If today's time has passed, schedule tomorrow
         if (target <= now) {
             target.setDate(target.getDate() + 1);
         }
@@ -87,42 +100,94 @@
         return target;
     }
 
-    function sendContinue() {
+    function sendMessage(text) {
         const editor = document.querySelector('[contenteditable="true"]');
-        if (!editor) return;
+
+        if (!editor) {
+            console.log("❌ Editor not found");
+            return;
+        }
 
         editor.focus();
 
         document.execCommand('selectAll', false, null);
         document.execCommand('delete', false, null);
-        document.execCommand('insertText', false, "continue");
+        document.execCommand('insertText', false, text);
+
+        editor.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            inputType: 'insertText',
+            data: text
+        }));
 
         setTimeout(() => {
-            editor.dispatchEvent(new KeyboardEvent('keydown', {
-                bubbles: true,
-                cancelable: true,
-                key: 'Enter',
-                code: 'Enter',
-                keyCode: 13
-            }));
-        }, 300);
+
+            const sendButton = [...document.querySelectorAll('button')]
+                .find(b =>
+                    (b.ariaLabel || b.getAttribute('aria-label') || '')
+                        .toLowerCase()
+                        .includes('send')
+                );
+
+            if (sendButton) {
+                sendButton.click();
+                console.log(`📤 Sent: "${text}"`);
+            } else {
+                console.log("❌ Send button not found");
+            }
+
+        }, 800);
+    }
+
+    function formatRemaining(ms) {
+
+        let totalSeconds = Math.max(0, Math.floor(ms / 1000));
+
+        const days = Math.floor(totalSeconds / 86400);
+        totalSeconds %= 86400;
+
+        const hours = Math.floor(totalSeconds / 3600);
+        totalSeconds %= 3600;
+
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+
+        if (days > 0) {
+            return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+        }
+
+        if (hours >= 1) {
+            return `${hours}h ${minutes}m ${seconds}s`;
+        }
+
+        return `${minutes}m ${seconds}s`;
     }
 
     document.getElementById("goBtn").onclick = () => {
-        const value = document.getElementById("timeInput").value.trim();
 
-        const parts = value.split(":");
+        const timeValue = document.getElementById("timeInput").value.trim();
+        const messageValue =
+            document.getElementById("msgInput").value.trim() || "Continue";
+
+        const parts = timeValue.split(":");
 
         if (parts.length !== 2) {
-            alert("Invalid format. Use HH:MM (e.g. 03:10)");
+            alert("Invalid time format. Use HH:MM (e.g. 03:10)");
             return;
         }
 
         const hour = parseInt(parts[0], 10);
         const minute = parseInt(parts[1], 10);
 
-        if (isNaN(hour) || isNaN(minute)) {
-            alert("Invalid numbers");
+        if (
+            isNaN(hour) ||
+            isNaN(minute) ||
+            hour < 0 ||
+            hour > 23 ||
+            minute < 0 ||
+            minute > 59
+        ) {
+            alert("Invalid time");
             return;
         }
 
@@ -131,41 +196,78 @@
         const target = getNextRun(hour, minute);
         const delay = target - new Date();
 
-        console.log("⏳ scheduled for:", target.toString());
+        console.log("⏰ Scheduled for:", target.toString());
+        console.log("💬 Message:", messageValue);
 
-        // countdown UI
+        // ----------------------------
+        // COUNTDOWN BOX
+        // ----------------------------
+
         const box = document.createElement("div");
+
         box.style.position = "fixed";
         box.style.bottom = "20px";
         box.style.right = "20px";
-        box.style.background = "rgba(0,0,0,0.8)";
+        box.style.background = "rgba(0,0,0,0.85)";
         box.style.color = "white";
         box.style.padding = "12px";
         box.style.borderRadius = "10px";
         box.style.fontFamily = "monospace";
         box.style.zIndex = "999999";
+        box.style.minWidth = "260px";
+        box.style.lineHeight = "1.5";
 
         document.body.appendChild(box);
 
-        setInterval(() => {
-            const diff = target - new Date();
-            const sec = Math.max(0, Math.floor(diff / 1000));
+        const countdownTimer = setInterval(() => {
 
-            const m = Math.floor(sec / 60);
-            const s = sec % 60;
+            const remaining = target - new Date();
+
+            if (remaining <= 0) {
+                return;
+            }
 
             box.innerHTML = `
-                ⏳ Running scheduler<br>
-                Target: ${target.toLocaleTimeString()}<br>
-                Remaining: ${m}m ${s}s
+                ⏳ Scheduler Running<br>
+                Target: ${target.toLocaleString()}<br>
+                Message: ${messageValue}<br>
+                Remaining: ${formatRemaining(remaining)}
             `;
+
         }, 1000);
 
+        // Initial display immediately
+        box.innerHTML = `
+            ⏳ Scheduler Running<br>
+            Target: ${target.toLocaleString()}<br>
+            Message: ${messageValue}<br>
+            Remaining: ${formatRemaining(delay)}
+        `;
+
+        // ----------------------------
+        // EXECUTE ONCE
+        // ----------------------------
+
         setTimeout(() => {
-            console.log("🚀 TRIGGER FIRED");
-            sendContinue();
-            box.innerHTML += "<br>✅ SENT";
+
+            clearInterval(countdownTimer);
+
+            box.innerHTML = `
+                🚀 Triggering...<br>
+                Target: ${target.toLocaleString()}<br>
+                Message: ${messageValue}
+            `;
+
+            console.log("🚀 Trigger Fired");
+
+            sendMessage(messageValue);
+
+            setTimeout(() => {
+                box.innerHTML += "<br>✅ Sent";
+            }, 1000);
+
         }, delay);
+
     };
 
 })();
