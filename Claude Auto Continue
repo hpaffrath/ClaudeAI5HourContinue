@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Claude Auto Continue (Time + Message Scheduler)
+// @name         Claude Message Scheduler
 // @namespace    http://tampermonkey.net/
-// @version      3.3
+// @version      4.1
 // @match        https://claude.ai/*
 // @match        https://*.claude.ai/*
 // @grant        none
@@ -10,137 +10,13 @@
 (function () {
     'use strict';
 
-    console.log("🔥 Scheduler loaded (time + message mode)");
+    console.log("🔥 Claude Message Scheduler v4.1 loaded");
 
-    // ----------------------------
-    // CUSTOM INPUT UI
-    // ----------------------------
-    const overlay = document.createElement("div");
-    overlay.style.position = "fixed";
-    overlay.style.top = "0";
-    overlay.style.left = "0";
-    overlay.style.width = "100%";
-    overlay.style.height = "100%";
-    overlay.style.background = "rgba(0,0,0,0.6)";
-    overlay.style.zIndex = "999999";
-    overlay.style.display = "flex";
-    overlay.style.alignItems = "center";
-    overlay.style.justifyContent = "center";
-
-    overlay.innerHTML = `
-        <div style="
-            background: #111;
-            color: white;
-            padding: 20px;
-            border-radius: 12px;
-            font-family: monospace;
-            width: 340px;
-        ">
-            <h3 style="margin-top:0;">⏰ Scheduler Setup</h3>
-
-            <div style="font-size:12px; opacity:0.8; margin-bottom:8px;">
-                Time (24h format)
-            </div>
-
-            <div style="font-size:12px; margin-bottom:6px;">
-                Examples: 03:10 • 15:45 • 09:05
-            </div>
-
-            <input id="timeInput" style="
-                width: 100%;
-                padding: 8px;
-                margin-bottom: 12px;
-                border-radius: 6px;
-                border: 1px solid #444;
-                background: black;
-                color: white;
-                box-sizing: border-box;
-            " placeholder="HH:MM" />
-
-            <div style="font-size:12px; opacity:0.8; margin-bottom:6px;">
-                Message to send
-            </div>
-
-            <input id="msgInput" style="
-                width: 100%;
-                padding: 8px;
-                margin-bottom: 12px;
-                border-radius: 6px;
-                border: 1px solid #444;
-                background: black;
-                color: white;
-                box-sizing: border-box;
-            " value="Continue" />
-
-            <button id="goBtn" style="
-                width: 100%;
-                padding: 10px;
-                background: green;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                cursor: pointer;
-            ">Start</button>
-        </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    function getNextRun(hour, minute) {
-        const now = new Date();
-        const target = new Date();
-
-        target.setHours(hour, minute, 0, 0);
-
-        // If today's time has passed, schedule tomorrow
-        if (target <= now) {
-            target.setDate(target.getDate() + 1);
-        }
-
-        return target;
-    }
-
-    function sendMessage(text) {
-        const editor = document.querySelector('[contenteditable="true"]');
-
-        if (!editor) {
-            console.log("❌ Editor not found");
-            return;
-        }
-
-        editor.focus();
-
-        document.execCommand('selectAll', false, null);
-        document.execCommand('delete', false, null);
-        document.execCommand('insertText', false, text);
-
-        editor.dispatchEvent(new InputEvent('input', {
-            bubbles: true,
-            inputType: 'insertText',
-            data: text
-        }));
-
-        setTimeout(() => {
-
-            const sendButton = [...document.querySelectorAll('button')]
-                .find(b =>
-                    (b.ariaLabel || b.getAttribute('aria-label') || '')
-                        .toLowerCase()
-                        .includes('send')
-                );
-
-            if (sendButton) {
-                sendButton.click();
-                console.log(`📤 Sent: "${text}"`);
-            } else {
-                console.log("❌ Send button not found");
-            }
-
-        }, 800);
-    }
+    let statusBox = null;
+    let countdownTimer = null;
+    let executionTimer = null;
 
     function formatRemaining(ms) {
-
         let totalSeconds = Math.max(0, Math.floor(ms / 1000));
 
         const days = Math.floor(totalSeconds / 86400);
@@ -163,111 +39,299 @@
         return `${minutes}m ${seconds}s`;
     }
 
-    document.getElementById("goBtn").onclick = () => {
+    function getNextRun(hour, minute) {
+        const now = new Date();
+        const target = new Date();
 
-        const timeValue = document.getElementById("timeInput").value.trim();
-        const messageValue =
-            document.getElementById("msgInput").value.trim() || "Continue";
+        target.setHours(hour, minute, 0, 0);
 
-        const parts = timeValue.split(":");
+        if (target <= now) {
+            target.setDate(target.getDate() + 1);
+        }
 
-        if (parts.length !== 2) {
-            alert("Invalid time format. Use HH:MM (e.g. 03:10)");
+        return target;
+    }
+
+    function getDefaultTime() {
+        const d = new Date();
+        d.setMinutes(d.getMinutes() + 5);
+
+        return (
+            String(d.getHours()).padStart(2, '0') +
+            ':' +
+            String(d.getMinutes()).padStart(2, '0')
+        );
+    }
+
+    function sendMessage(text) {
+
+        const editor = document.querySelector('[contenteditable="true"]');
+
+        if (!editor) {
+            console.log("❌ Editor not found");
             return;
         }
 
-        const hour = parseInt(parts[0], 10);
-        const minute = parseInt(parts[1], 10);
+        editor.focus();
 
-        if (
-            isNaN(hour) ||
-            isNaN(minute) ||
-            hour < 0 ||
-            hour > 23 ||
-            minute < 0 ||
-            minute > 59
-        ) {
-            alert("Invalid time");
-            return;
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+        document.execCommand('insertText', false, text);
+
+        editor.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            inputType: 'insertText',
+            data: text
+        }));
+
+        setTimeout(() => {
+
+            const sendButton = [...document.querySelectorAll('button')]
+                .find(btn => {
+                    const label =
+                        btn.ariaLabel ||
+                        btn.getAttribute('aria-label') ||
+                        '';
+
+                    return label.toLowerCase().includes('send');
+                });
+
+            if (sendButton) {
+                sendButton.click();
+                console.log(`📤 Sent: "${text}"`);
+            } else {
+                console.log("❌ Send button not found");
+            }
+
+        }, 800);
+    }
+
+    function ensureStatusBox() {
+
+        if (statusBox) return;
+
+        statusBox = document.createElement('div');
+
+        statusBox.style.position = 'fixed';
+        statusBox.style.bottom = '20px';
+        statusBox.style.right = '20px';
+        statusBox.style.background = 'rgba(0,0,0,0.85)';
+        statusBox.style.color = 'white';
+        statusBox.style.padding = '12px';
+        statusBox.style.borderRadius = '10px';
+        statusBox.style.fontFamily = 'monospace';
+        statusBox.style.zIndex = '999999';
+        statusBox.style.minWidth = '280px';
+        statusBox.style.lineHeight = '1.5';
+        statusBox.style.boxShadow = '0 0 10px rgba(0,0,0,0.4)';
+
+        document.body.appendChild(statusBox);
+    }
+
+    function showSetupDialog() {
+
+        const overlay = document.createElement('div');
+
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.background = 'rgba(0,0,0,0.6)';
+        overlay.style.zIndex = '1000000';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+
+        overlay.innerHTML = `
+            <div style="
+                background:#111;
+                color:white;
+                padding:20px;
+                border-radius:12px;
+                font-family:monospace;
+                width:340px;
+            ">
+                <h3 style="margin-top:0;">
+                    ⏰ Scheduler Setup
+                </h3>
+
+                <div style="font-size:12px; opacity:0.8; margin-bottom:8px;">
+                    Time (24h format)
+                </div>
+
+                <div style="font-size:12px; margin-bottom:6px;">
+                    Examples: 03:10 • 15:45 • 09:05
+                </div>
+
+                <input id="schedulerTime"
+                    value="${getDefaultTime()}"
+                    style="
+                        width:100%;
+                        padding:8px;
+                        margin-bottom:12px;
+                        border-radius:6px;
+                        border:1px solid #444;
+                        background:black;
+                        color:white;
+                        box-sizing:border-box;
+                    "
+                />
+
+                <div style="font-size:12px; opacity:0.8; margin-bottom:6px;">
+                    Message to send
+                </div>
+
+                <input id="schedulerMessage"
+                    value="Continue"
+                    style="
+                        width:100%;
+                        padding:8px;
+                        margin-bottom:12px;
+                        border-radius:6px;
+                        border:1px solid #444;
+                        background:black;
+                        color:white;
+                        box-sizing:border-box;
+                    "
+                />
+
+                <button id="schedulerStart"
+                    style="
+                        width:100%;
+                        padding:10px;
+                        background:green;
+                        color:white;
+                        border:none;
+                        border-radius:6px;
+                        cursor:pointer;
+                    ">
+                    Start
+                </button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        document.getElementById('schedulerStart').onclick = () => {
+
+            const timeValue =
+                document.getElementById('schedulerTime').value.trim();
+
+            const messageValue =
+                document.getElementById('schedulerMessage').value.trim() ||
+                'Continue';
+
+            const parts = timeValue.split(':');
+
+            if (parts.length !== 2) {
+                alert('Invalid time format. Use HH:MM');
+                return;
+            }
+
+            const hour = parseInt(parts[0], 10);
+            const minute = parseInt(parts[1], 10);
+
+            if (
+                isNaN(hour) ||
+                isNaN(minute) ||
+                hour < 0 ||
+                hour > 23 ||
+                minute < 0 ||
+                minute > 59
+            ) {
+                alert('Invalid time');
+                return;
+            }
+
+            overlay.remove();
+
+            startSchedule(hour, minute, messageValue);
+        };
+    }
+
+    function startSchedule(hour, minute, message) {
+
+        ensureStatusBox();
+
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
         }
 
-        overlay.remove();
+        if (executionTimer) {
+            clearTimeout(executionTimer);
+        }
 
         const target = getNextRun(hour, minute);
-        const delay = target - new Date();
 
-        console.log("⏰ Scheduled for:", target.toString());
-        console.log("💬 Message:", messageValue);
+        function updateStatus() {
 
-        // ----------------------------
-        // COUNTDOWN BOX
-        // ----------------------------
+            const remaining = target - new Date();
 
-        const box = document.createElement("div");
+            statusBox.innerHTML = `
+                ⏳ Scheduler Running<br>
+                Target: ${target.toLocaleString()}<br>
+                Message: ${message}<br>
+                Remaining: ${formatRemaining(remaining)}
+            `;
+        }
 
-        box.style.position = "fixed";
-        box.style.bottom = "20px";
-        box.style.right = "20px";
-        box.style.background = "rgba(0,0,0,0.85)";
-        box.style.color = "white";
-        box.style.padding = "12px";
-        box.style.borderRadius = "10px";
-        box.style.fontFamily = "monospace";
-        box.style.zIndex = "999999";
-        box.style.minWidth = "260px";
-        box.style.lineHeight = "1.5";
+        updateStatus();
 
-        document.body.appendChild(box);
-
-        const countdownTimer = setInterval(() => {
+        countdownTimer = setInterval(() => {
 
             const remaining = target - new Date();
 
             if (remaining <= 0) {
+                clearInterval(countdownTimer);
                 return;
             }
 
-            box.innerHTML = `
-                ⏳ Scheduler Running<br>
-                Target: ${target.toLocaleString()}<br>
-                Message: ${messageValue}<br>
-                Remaining: ${formatRemaining(remaining)}
-            `;
+            updateStatus();
 
         }, 1000);
 
-        // Initial display immediately
-        box.innerHTML = `
-            ⏳ Scheduler Running<br>
-            Target: ${target.toLocaleString()}<br>
-            Message: ${messageValue}<br>
-            Remaining: ${formatRemaining(delay)}
-        `;
-
-        // ----------------------------
-        // EXECUTE ONCE
-        // ----------------------------
-
-        setTimeout(() => {
+        executionTimer = setTimeout(() => {
 
             clearInterval(countdownTimer);
 
-            box.innerHTML = `
+            statusBox.innerHTML = `
                 🚀 Triggering...<br>
-                Target: ${target.toLocaleString()}<br>
-                Message: ${messageValue}
+                Message: ${message}
             `;
 
-            console.log("🚀 Trigger Fired");
-
-            sendMessage(messageValue);
+            sendMessage(message);
 
             setTimeout(() => {
-                box.innerHTML += "<br>✅ Sent";
+
+                statusBox.innerHTML = `
+                    ✅ Sent<br>
+                    Time: ${new Date().toLocaleString()}<br>
+                    Message: ${message}<br><br>
+
+                    <button id="scheduleAnotherBtn"
+                       style="
+                       width:100%;
+                       padding:10px;
+                       background:green;
+                       color:white;
+                       border:none;
+                       border-radius:6px;
+                       cursor:pointer;
+                     ">
+                        Schedule Another
+                     </button>
+                `;
+
+                document
+                    .getElementById('scheduleAnotherBtn')
+                    .onclick = showSetupDialog;
+
             }, 1000);
 
-        }, delay);
+        }, target - new Date());
+    }
 
-    };
+    showSetupDialog();
 
 })();
