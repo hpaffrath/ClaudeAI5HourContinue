@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name         Claude Message Scheduler
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @description  Claude scheduler
+// @version      4.2
 // @match        https://claude.ai/*
 // @match        https://*.claude.ai/*
 // @grant        none
@@ -10,13 +11,14 @@
 (function () {
     'use strict';
 
-    console.log("🔥 Claude Message Scheduler v4.1 loaded");
+    console.log("🔥 Claude Message Scheduler v4.2 loaded");
 
     let statusBox = null;
     let countdownTimer = null;
     let executionTimer = null;
 
     function formatRemaining(ms) {
+
         let totalSeconds = Math.max(0, Math.floor(ms / 1000));
 
         const days = Math.floor(totalSeconds / 86400);
@@ -40,6 +42,7 @@
     }
 
     function getNextRun(hour, minute) {
+
         const now = new Date();
         const target = new Date();
 
@@ -53,6 +56,7 @@
     }
 
     function getDefaultTime() {
+
         const d = new Date();
         d.setMinutes(d.getMinutes() + 5);
 
@@ -88,6 +92,7 @@
 
             const sendButton = [...document.querySelectorAll('button')]
                 .find(btn => {
+
                     const label =
                         btn.ariaLabel ||
                         btn.getAttribute('aria-label') ||
@@ -97,13 +102,39 @@
                 });
 
             if (sendButton) {
+
                 sendButton.click();
+
                 console.log(`📤 Sent: "${text}"`);
+
             } else {
+
                 console.log("❌ Send button not found");
+
             }
 
         }, 800);
+    }
+
+    function clearEditor() {
+
+        const editor = document.querySelector('[contenteditable="true"]');
+
+        if (!editor) {
+            console.log("🧹 No editor found to clear");
+            return;
+        }
+
+        editor.focus();
+
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+
+        editor.dispatchEvent(new InputEvent('input', {
+            bubbles: true
+        }));
+
+        console.log("🧹 Editor cleared");
     }
 
     function ensureStatusBox() {
@@ -254,13 +285,8 @@
 
         ensureStatusBox();
 
-        if (countdownTimer) {
-            clearInterval(countdownTimer);
-        }
-
-        if (executionTimer) {
-            clearTimeout(executionTimer);
-        }
+        if (countdownTimer) clearInterval(countdownTimer);
+        if (executionTimer) clearTimeout(executionTimer);
 
         const target = getNextRun(hour, minute);
 
@@ -300,6 +326,8 @@
                 Message: ${message}
             `;
 
+            console.log("🚀 Trigger Fired");
+
             sendMessage(message);
 
             setTimeout(() => {
@@ -310,22 +338,32 @@
                     Message: ${message}<br><br>
 
                     <button id="scheduleAnotherBtn"
-                       style="
-                       width:100%;
-                       padding:10px;
-                       background:green;
-                       color:white;
-                       border:none;
-                       border-radius:6px;
-                       cursor:pointer;
-                     ">
+                        style="
+                            width:100%;
+                            padding:10px;
+                            background:green;
+                            color:white;
+                            border:none;
+                            border-radius:6px;
+                            cursor:pointer;
+                        ">
                         Schedule Another
-                     </button>
+                    </button>
                 `;
 
                 document
                     .getElementById('scheduleAnotherBtn')
-                    .onclick = showSetupDialog;
+                    .onclick = () => {
+
+                        console.log("🔄 Schedule Another clicked");
+
+                        clearEditor();
+
+                        setTimeout(() => {
+                            showSetupDialog();
+                        }, 100);
+
+                    };
 
             }, 1000);
 
